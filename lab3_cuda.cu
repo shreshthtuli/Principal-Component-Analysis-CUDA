@@ -11,6 +11,17 @@ using namespace std;
 ////////////////////////////////////Helper Functions///////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
+double compare_matrices(double** A, double** B, int M, int N){
+    double diff = 0; int p, q;
+    for(int i = 0; i < M; i++)
+        for(int j = 0; j < N; j++){
+            if(fabs(fabs(A[i][j]) - fabs(B[i][j])) > diff){
+                diff = fabs(fabs(A[i][j]) - fabs(B[i][j]));
+                p = i; q = j; 
+            }
+        }
+    return diff;
+}
 
 void reverse_array(double* a, int N){
     double* temp = new double[N];
@@ -359,6 +370,18 @@ void SVD_and_PCA (int M,
         sumeigen += sigma[i][i] * sigma[i][i];
         printf("Sigma %d is %f\n", i, *(*SIGMA + i));
     }
+
+    // Test U = M * V * Sigma-1
+    matrix_multiply(temp, U_temp, sigma, N, N, M);
+    matrix_multiply(temp2, temp, Vt, N, M, M);
+
+    printf("Comparison result diff = %f\n", compare_matrices(temp2, Dt, N, M));
+
+
+///////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////PCA//////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+
 
     double sumret = 0; int k = 0;
     for(k = 0; k < N; k++){
