@@ -7,6 +7,11 @@
 
 using namespace std;
 
+///////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////Helper Functions///////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////
+
+
 void reverse_array(double* a, int N){
     double* temp = new double[N];
     for(int i = 0; i < N; i++)
@@ -74,13 +79,6 @@ void print_matrix(double** A, int M, int N, char* name){
 /////////////////////////////////////////Jacobi////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-typedef struct struct_eigen
-{
-    double value;
-    double* vector;
-} eigen;
-
-
 class SymmetricMatrix
 {
     private:
@@ -108,6 +106,82 @@ class SymmetricMatrix
         void calculateEigens();
 };
 
+void maxInd(size_t *p, size_t *q, double *Apq, size_t size, SymmetricMatrix& matA)
+{
+    double Aij;
+    *p = 0, *q = 1;
+    *Apq = abs(matA[0][1]);
+    for (size_t i = 0; i < size; i++)
+    {
+        for (size_t j = 0; j < i; j++)
+        {
+            Aij = abs(matA[i][j]);
+            if (Aij > *Apq)
+            {
+                *Apq = Aij;
+                *p = i;
+                *q = j;
+            }
+        }
+    }
+}
+
+void calcPhiTCS(double *phi, size_t p, size_t q, double *t, double *c, double *s, SymmetricMatrix& matA)
+{
+    *phi = (matA[q][q] - matA[p][p]) / (2 * matA[p][q]);
+    *t = *phi == 0 ? 1 : (1 / (*phi + (*phi > 0 ? 1 : -1) * sqrt(*phi * *phi + 1)));
+    *c = 1 / sqrt(1 + *t * *t);
+    *s = *t / sqrt(1 + *t * *t);
+}
+
+void populateA(double **A, size_t p, size_t q, double c, double s, SymmetricMatrix& matA, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        for (size_t j = 0; j < size; j++)
+        {
+            if (i == p)
+                A[i][j] = matA[p][j] * c - matA[q][j] * s;
+            else if (i == q)
+                A[i][j] = matA[p][j] * s + matA[q][j] * c;
+            else
+                A[i][j] = matA[i][j];
+        }
+    }
+}
+
+void populateMatA(double **A, size_t p, size_t q, double c, double s, SymmetricMatrix& matA, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        for (size_t j = 0; j <= i; j++)
+        {
+            if (j == p)
+                matA[i][p] = A[i][p] * c - A[i][q] * s;
+            else if (j == q)
+                matA[i][q] = A[i][p] * s + A[i][q] * c;
+            else
+                matA[i][j] = A[i][j];
+        }
+    }
+}
+
+void computeNext(double **now, double **next, size_t p, size_t q, double c, double s, size_t size)
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        for (size_t j = 0; j < size; j++)
+        {
+            if (j == p)
+                next[i][j] = now[i][p] * c - now[i][q] * s;
+            else if (j == q)
+                next[i][j] = now[i][p] * s + now[i][q] * c;
+            else
+                next[i][j] = now[i][j];
+        }
+    }
+}
+
 SymmetricMatrix::SymmetricMatrix(size_t mat_size, double prec) 
 {
     m_size = mat_size;
@@ -134,92 +208,31 @@ void SymmetricMatrix::calculateEigens()
     size_t size = m_size;
 
     SymmetricMatrix* matAp = this;
-    while(true)
+    SymmetricMatrix& matA = *matAp;
+    double Aij, Apq = 100, phi, t, c, s;
+    double** A = empty_matrix(size, size);
+    double** nextEVects = empty_matrix(size, size);
+    size_t p, q;
+
+    while(Apq > precision)
     {
-        SymmetricMatrix& matA = *matAp;
+        maxInd(&p, &q, &Apq, size, matA);
 
-        // Computing max Aij -> Apq, p, q
-        size_t p = 0, q = 1;
-        double Apq = abs(matA[0][1]);
-        for (size_t i = 0; i < size; i++)
-        {
-            for (size_t j = 0; j < i; j++)
-            {
-                double Aij = abs(matA[i][j]);
-                if (Aij > Apq)
-                {
-                    Apq = Aij;
-                    p = i;
-                    q = j;
-                }
-            }
-        }
+        calcPhiTCS(&phi, p, q, &t, &c, &s, matA);
 
-        if (Apq < precision)
-            break;
+        populateA(A, p, q, c, s, matA, size);
+    
+        populateMatA(A, p, q, c, s, matA, size);
 
-        double phi = (matA[q][q] - matA[p][p]) / (2 * matA[p][q]);
-        double t = phi == 0 ? 1 : (1 / (phi + (phi > 0 ? 1 : -1) * sqrt(phi * phi + 1)));
-        double c = 1 / sqrt(1 + t * t);
-        double s = t / sqrt(1 + t * t);
+        populateMatA(A, p, q, c, s, matA, size);
 
-        // Computing Jacob rotation
-        double** A_ = empty_matrix(size, size);
-        for (size_t i = 0; i < size; i++)
-        {
-            for (size_t j = 0; j < size; j++)
-            {
-                if (i == p)
-                    A_[i][j] = matA[p][j] * c - matA[q][j] * s;
-                else if (i == q)
-                    A_[i][j] = matA[p][j] * s + matA[q][j] * c;
-                else
-                    A_[i][j] = matA[i][j];
-            }
-        }
-        SymmetricMatrix* nextMatA = new SymmetricMatrix(size, precision);
-        SymmetricMatrix& A__ = *nextMatA;
-        for (size_t i = 0; i < size; i++)
-        {
-            for (size_t j = 0; j <= i; j++)
-            {
-                if (j == p)
-                    A__[i][p] = A_[i][p] * c - A_[i][q] * s;
-                else if (j == q)
-                    A__[i][q] = A_[i][p] * s + A_[i][q] * c;
-                else
-                    A__[i][j] = A_[i][j];
-            }
-        }
+        computeNext(eVects, nextEVects, p, q, c, s ,size);        
 
-        delete[] A_;
-        if (matAp != this)
-            delete matAp;
-
-        matAp = nextMatA;
-
-        // Computing eigenvectors
-        double** nextEVects = empty_matrix(size, size);
-        for (size_t i = 0; i < size; i++)
-        {
-            for (size_t j = 0; j < size; j++)
-            {
-                if (j == p)
-                    nextEVects[i][j] = eVects[i][p] * c - eVects[i][q] * s;
-                else if (j == q)
-                    nextEVects[i][j] = eVects[i][p] * s + eVects[i][q] * c;
-                else
-                    nextEVects[i][j] = eVects[i][j];
-            }
-        }
-        delete[] eVects;
-        eVects = nextEVects;
+        copy_matrix(eVects, nextEVects, size, size);
     }
 
     for (size_t i = 0; i < size; i++)
-    {
-        eigenvalues[i] = (*matAp)[i][i];
-    }
+        eigenvalues[i] = matA[i][i];
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
