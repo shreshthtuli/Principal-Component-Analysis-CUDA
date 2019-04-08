@@ -44,19 +44,12 @@ python3 gen_testcase.py
 The first line of the input file contains `M` followed by `N`. The second line contains elements of matrix `D`. All the values in one line are space separated.  
 
 #### Output Specification
-Your program should perform SVD and PCA on the given input and store the results in the variables given in the program. We will check the correctness by calling the functions from the program. You should compute following matrices and values:  
+The program performs SVD and PCA on the given input and store the results in the variables given in the program. I checked the correctness by calling the functions from the program. Copmuted the following:  
 - U : N x N real matrix (to be computed by SVD)
 - SIGMA : N x M diagonal matrix of positive real numbers ( to be computed by SVD)
 - V_T : M x M real matrix (to be computed by SVD)
 - K : number of columns (features) in reduced matrix D_HAT
 - D_HAT : reduced matrix (to be computed by PCA)
 
-Refer to `lab3_cuda.h` for more details. **Your program should not output anything on `stdout`.**  
+Refer to `lab3_cuda.h` for more details. **This program does not output anything on `stdout`.**  
 
-## Submission Instructions
-- You are supposed to submit only one file named `lab3_cuda.cu`. Please make sure all the functions you have used are in this file.
-- Do not submit other files
-- Your code should build and execute as per the instructions given above. Please make sure that your code doesn't need any Makefile.
-- Your program should not output anything in `stdout`.
-
-We will not consider the submissions that don't comply with these guidelines.
