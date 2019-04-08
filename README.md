@@ -1,4 +1,4 @@
-# col380_lab3_suite
+# Principal Component Analysis - CUDA
 Problem Statement: Implement Principal Component Analysis with Singular Vector Decomposition in CUDA
 
 ## Directories and files
