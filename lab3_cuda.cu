@@ -279,8 +279,6 @@ void SVD_and_PCA (int M,
     printf("Starting jacobi\n");
 
     // Jacobi
-    // Di has diagonal entries as eigenvalues
-    // Ei has eigenvectors as columns
     SymmetricMatrix mat(N, 1e-10);
 
     for (int i = 0; i < N; i++)
@@ -331,7 +329,6 @@ void SVD_and_PCA (int M,
         *(*SIGMA+i) = sqrt(eigenvalues[i]);
         sigma[i][i] = sqrt(eigenvalues[i]);
         sigma_inv[i][i] = (1.0 / sqrt(eigenvalues[i]));
-        // printf("Sigma %d = %f\n", i, *(*SIGMA+i));
     }
 
     double** Vt = empty_matrix(M, M);
