@@ -7,6 +7,69 @@
 
 using namespace std;
 
+void reverse_array(double* a, int N){
+    double* temp = new double[N];
+    for(int i = 0; i < N; i++)
+        temp[i] = a[i];
+    for(int i = 0; i < N; i++)
+        a[i] = temp[N-i-1];
+}
+
+void copy_matrix(double** to, double** from, int n, int m){
+    #pragma omp parallel for
+    for(int i = 0; i < m; i++){
+        #pragma omp parallel for
+        for(int j = 0; j < n; j++)  
+            to[i][j] = from[i][j];
+    }
+}
+
+double** empty_matrix(int m, int n){
+    double** A = new double*[m];
+    for(int i = 0; i < m; i++){
+        A[i] = new double[n];
+        for(int j = 0; j < n; j++)  
+            A[i][j] = 0;
+    }
+    return A;
+}
+
+double** diagonal_matrix(int n){
+    double** A = new double*[n];
+    for(int i = 0; i < n; i++){
+        A[i] = new double[n];
+        for(int j = 0; j < n; j++)  
+            A[i][j] = (i == j) ? 1 : 0;
+    }
+    return A;
+}
+
+float matrix_multiply(double** res, double** A, double** B, int N, int M, int N1){
+    // Matrices shapes: A = NxM, B = MxN1, res = NxN1
+    double diff = 0; double old;
+    for(int i = 0; i < N; i++){
+        for(int j = 0; j < N1; j++){
+            old = res[i][j];
+            res[i][j] = 0;
+            for(int k = 0; k < M; k++)
+                res[i][j] += A[i][k] * B[k][j];
+            diff = max(diff, fabs(fabs(res[i][j]) - fabs(old)));
+        }
+    }
+    return (float)diff;
+}
+
+void print_matrix(double** A, int M, int N, char* name){
+    printf("\nMatrix %s\n", name);
+    for(int i = 0; i < M; i++){
+        for(int j = 0; j < N; j++){
+            printf("%f ", A[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////Jacobi////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -20,13 +83,15 @@ typedef struct struct_eigen
 
 class SymmetricMatrix
 {
+    private:
+        size_t m_size;
+        double* m_mat;
+        double precision;
+    
     public:
-        SymmetricMatrix();
-        SymmetricMatrix(size_t mat_size);
-        virtual ~SymmetricMatrix();
-        SymmetricMatrix(const SymmetricMatrix& other);
-
-        size_t Getsize() const { return m_size; }
+        double* eigenvalues;
+        double** eVects;
+        SymmetricMatrix(size_t mat_size, double prec);
 
         class Row
         {
@@ -40,33 +105,16 @@ class SymmetricMatrix
         };
 
         Row operator[](size_t index);
-        eigen* calculateEigens(double precision);
-
-    protected:
-
-    private:
-        const size_t m_size;
-        double* const m_mat;
+        void calculateEigens();
 };
 
-SymmetricMatrix::SymmetricMatrix() : m_size(0), m_mat(nullptr)
+SymmetricMatrix::SymmetricMatrix(size_t mat_size, double prec) 
 {
-}
-
-SymmetricMatrix::SymmetricMatrix(size_t mat_size) : m_size(mat_size), m_mat(new double[(mat_size - 1) * mat_size / 2 + mat_size])
-{
-}
-
-SymmetricMatrix::~SymmetricMatrix()
-{
-    delete[] m_mat;
-}
-
-SymmetricMatrix::SymmetricMatrix(const SymmetricMatrix& other) : SymmetricMatrix(other.m_size)
-{
-    size_t arr_size = (m_size - 1) * m_size / 2 + m_size;
-    for (size_t i = 0; i < arr_size; i++)
-        m_mat[i] = other.m_mat[i];
+    m_size = mat_size;
+    m_mat = new double[(mat_size - 1) * mat_size / 2 + mat_size];
+    precision = abs(prec);
+    eigenvalues = new double[mat_size];
+    eVects = diagonal_matrix(mat_size);
 }
 
 SymmetricMatrix::Row SymmetricMatrix::operator[](size_t row)
@@ -81,26 +129,9 @@ double& SymmetricMatrix::Row::operator[](size_t col)
     return m_mat.m_mat[(r + 1) * r / 2 + c];
 }
 
-eigen* SymmetricMatrix::calculateEigens(double precision)
+void SymmetricMatrix::calculateEigens()
 {
-    precision = abs(precision);
-    size_t size = Getsize();
-
-    if (size == 0)
-        return nullptr;
-    if (size == 1)
-    {
-        eigen* e = new eigen[1];
-        e[0].value = m_mat[0];
-        e[0].vector = new double[1];
-        e[0].vector[0] = 1;
-        return e;
-    }
-
-    double* eVects = new double[size * size];
-    for (size_t i = 0; i < size; i++)
-        for (size_t j = 0; j < size; j++)
-            eVects[i * size + j] = i == j ? 1 : 0;
+    size_t size = m_size;
 
     SymmetricMatrix* matAp = this;
     while(true)
@@ -133,32 +164,31 @@ eigen* SymmetricMatrix::calculateEigens(double precision)
         double s = t / sqrt(1 + t * t);
 
         // Computing Jacob rotation
-        double* A_ = new double[size * size];
+        double** A_ = empty_matrix(size, size);
         for (size_t i = 0; i < size; i++)
         {
             for (size_t j = 0; j < size; j++)
             {
-                size_t index = i * size + j;
                 if (i == p)
-                    A_[index] = matA[p][j] * c - matA[q][j] * s;
+                    A_[i][j] = matA[p][j] * c - matA[q][j] * s;
                 else if (i == q)
-                    A_[index] = matA[p][j] * s + matA[q][j] * c;
+                    A_[i][j] = matA[p][j] * s + matA[q][j] * c;
                 else
-                    A_[index] = matA[i][j];
+                    A_[i][j] = matA[i][j];
             }
         }
-        SymmetricMatrix* nextMatA = new SymmetricMatrix(size);
+        SymmetricMatrix* nextMatA = new SymmetricMatrix(size, precision);
         SymmetricMatrix& A__ = *nextMatA;
         for (size_t i = 0; i < size; i++)
         {
             for (size_t j = 0; j <= i; j++)
             {
                 if (j == p)
-                    A__[i][p] = A_[i * size + p] * c - A_[i * size + q] * s;
+                    A__[i][p] = A_[i][p] * c - A_[i][q] * s;
                 else if (j == q)
-                    A__[i][q] = A_[i * size + p] * s + A_[i * size + q] * c;
+                    A__[i][q] = A_[i][p] * s + A_[i][q] * c;
                 else
-                    A__[i][j] = A_[i * size + j];
+                    A__[i][j] = A_[i][j];
             }
         }
 
@@ -169,98 +199,32 @@ eigen* SymmetricMatrix::calculateEigens(double precision)
         matAp = nextMatA;
 
         // Computing eigenvectors
-        double* nextEVects = new double[size * size];
+        double** nextEVects = empty_matrix(size, size);
         for (size_t i = 0; i < size; i++)
         {
             for (size_t j = 0; j < size; j++)
             {
-                size_t k = i * size + j;
                 if (j == p)
-                    nextEVects[k] = eVects[i * size + p] * c - eVects[i * size + q] * s;
+                    nextEVects[i][j] = eVects[i][p] * c - eVects[i][q] * s;
                 else if (j == q)
-                    nextEVects[k] = eVects[i * size + p] * s + eVects[i * size + q] * c;
+                    nextEVects[i][j] = eVects[i][p] * s + eVects[i][q] * c;
                 else
-                    nextEVects[k] = eVects[k];
+                    nextEVects[i][j] = eVects[i][j];
             }
         }
         delete[] eVects;
         eVects = nextEVects;
     }
 
-    eigen* e = new eigen[size];
     for (size_t i = 0; i < size; i++)
     {
-        e[i].value = (*matAp)[i][i];
-        e[i].vector = new double[size];
-        for (size_t j = 0; j < size; j++)
-        {
-            e[i].vector[j] = eVects[j * size + i];
-        }
+        eigenvalues[i] = (*matAp)[i][i];
     }
-
-    if (matAp != this)
-        delete matAp;
-    delete[] eVects;
-
-    return e;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////SVD//////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
-
-void reverse_array(double* a, int N){
-    double* temp = new double[N];
-    for(int i = 0; i < N; i++)
-        temp[i] = a[i];
-    for(int i = 0; i < N; i++)
-        a[i] = temp[N-i-1];
-}
-
-void copy_matrix(double** to, double** from, int n, int m){
-    #pragma omp parallel for
-    for(int i = 0; i < m; i++){
-        #pragma omp parallel for
-        for(int j = 0; j < n; j++)  
-            to[i][j] = from[i][j];
-    }
-}
-
-double** empty_matrix(int m, int n){
-    double** A = new double*[m];
-    for(int i = 0; i < m; i++){
-        A[i] = new double[n];
-        for(int j = 0; j < n; j++)  
-            A[i][j] = 0;
-    }
-    return A;
-}
-
-
-float matrix_multiply(double** res, double** A, double** B, int N, int M, int N1){
-    // Matrices shapes: A = NxM, B = MxN1, res = NxN1
-    double diff = 0; double old;
-    for(int i = 0; i < N; i++){
-        for(int j = 0; j < N1; j++){
-            old = res[i][j];
-            res[i][j] = 0;
-            for(int k = 0; k < M; k++)
-                res[i][j] += A[i][k] * B[k][j];
-            diff = max(diff, fabs(fabs(res[i][j]) - fabs(old)));
-        }
-    }
-    return (float)diff;
-}
-
-void print_matrix(double** A, int M, int N, char* name){
-    printf("\nMatrix %s\n", name);
-    for(int i = 0; i < M; i++){
-        for(int j = 0; j < N; j++){
-            printf("%f ", A[i][j]);
-        }
-        printf("\n");
-    }
-}
 
 
 void SVD_and_PCA (int M, 
@@ -304,23 +268,23 @@ void SVD_and_PCA (int M,
     // Jacobi
     // Di has diagonal entries as eigenvalues
     // Ei has eigenvectors as columns
-    SymmetricMatrix mat(N);
+    SymmetricMatrix mat(N, 1e-10);
 
     for (int i = 0; i < N; i++)
         for (int j = 0; j <= i; j++)
             mat[i][j] = DtD[i][j];
 
-    eigen* e = mat.calculateEigens(1e-10);
+    mat.calculateEigens();
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
-            Ei[j][i] = e[i].vector[j];
+            Ei[j][i] = mat.eVects[j][i];
 
     // Extract eigenvalues into an array
     double* eigenvalues = new double[N];
     double* eigenvalues1 = new double[N];
     for(int i = 0; i < N; i++){
-        eigenvalues[i] = e[i].value;
-        eigenvalues1[i] = e[i].value;
+        eigenvalues[i] = mat.eigenvalues[i];
+        eigenvalues1[i] = mat.eigenvalues[i];
     }
     
     std::sort(eigenvalues, eigenvalues + N);
