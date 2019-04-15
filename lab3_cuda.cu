@@ -326,23 +326,15 @@ void SVD_and_PCA (
     // Get Eigenvalues of DtD i.e. Q and R
     double** Ei = empty_matrix(N, N);
     double** Ei_temp = empty_matrix(N, N);
+    double *eigenvalues = new double[N];;
 
     printf("Starting jacobi\n");
 
     // Jacobi
-    double **prod, *eigenvalues, **eigenvectors;
+    Jacobi(DtD, N, &eigenvalues, &Ei);
 
-    Jacobi(DtD, N, &eigenvalues, &eigenvectors);
-
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < N; j++)
-            Ei[j][i] = eigenvectors[j][i];
-
-    // Extract eigenvalues into an array
-    // double* eigenvalues = new double[N];
     double* eigenvalues1 = new double[N];
     for(int i = 0; i < N; i++){
-        eigenvalues[i] = eigenvalues[i];
         eigenvalues1[i] = eigenvalues[i];
     }
     
@@ -385,7 +377,6 @@ void SVD_and_PCA (
     double** Vt = empty_matrix(M, M);
     double** U_temp = empty_matrix(N, N);
     double* Ui = new double[N*N];
-    printf("U\n");
     // Compute U
     for(int i = 0; i < N; i++){
         for(int j = 0; j < N; j++){
@@ -394,7 +385,6 @@ void SVD_and_PCA (
         }
     }
     
-    printf("U\n");
     U = &Ui;
     double** temp = empty_matrix(M, N);
     double** temp2 = empty_matrix(M, M);
