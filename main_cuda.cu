@@ -67,6 +67,7 @@ int main(int argc, char const *argv[])
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&computation_time, start, stop);
+	printf("Total time: %f\n", computation_time);
 	
 	/*
 		--Pre-defined functions --

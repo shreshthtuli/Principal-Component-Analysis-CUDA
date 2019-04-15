@@ -251,17 +251,18 @@ void SymmetricMatrix::calculateEigens()
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 
-void SVD_and_PCA (int M, 
-        int N, 
-        double* D, 
-        double** U, 
-        double** SIGMA, 
-        int* SIGMAm,
-        int* SIGMAn, 
-        double** V_T, 
-        double** D_HAT, 
-        int *K,
-        int retention) {
+void SVD_and_PCA (
+    int M, 
+    int N, 
+    double* D, 
+    double** U, 
+    double** SIGMA, 
+    double** V_T, 
+    int *SIGMAm, 
+    int *SIGMAn, 
+    double** D_HAT, 
+    int *K, 
+    int retention) {
 
     *SIGMAm = M;
     *SIGMAm = N;
@@ -341,31 +342,39 @@ void SVD_and_PCA (int M,
 
     double** sigma = empty_matrix(M, N);
     double** sigma_inv = empty_matrix(N, M);
+    double* sigma_vals = new double[N];
     for(int i = 0; i < N; i++){
-        *(*SIGMA+i) = sqrt(eigenvalues[i]);
+        sigma_vals[i] = sqrt(eigenvalues[i]);
         sigma[i][i] = sqrt(eigenvalues[i]);
         sigma_inv[i][i] = (1.0 / sqrt(eigenvalues[i]));
     }
 
+    SIGMA = &sigma_vals;
+
     double** Vt = empty_matrix(M, M);
     double** U_temp = empty_matrix(N, N);
+    double* Ui = new double[N*N];
+    printf("U\n");
     // Compute U
     for(int i = 0; i < N; i++){
         for(int j = 0; j < N; j++){
-            *(*U + N*i + j) = Ei[i][j];
+            Ui[N*i + j] = Ei[i][j];
             U_temp[i][j] = Ei[i][j];
         }
     }
     
+    printf("U\n");
+    U = &Ui;
     double** temp = empty_matrix(M, N);
     double** temp2 = empty_matrix(M, M);
     matrix_multiply(temp, Dc, Ei, M, N, N);
     matrix_multiply(temp2, temp, sigma_inv, M, N, M);
 
     // V_T
+    double* Vi = new double[M*M];
     for(int i = 0; i < M; i++)
         for(int j = 0; j < M; j++){
-            *(*V_T + M*j + i) = temp2[i][j]; 
+            Vi[M*j+i] = temp2[i][j];
             Vt[j][i] = temp2[i][j];
         }
 
@@ -375,6 +384,8 @@ void SVD_and_PCA (int M,
         sumeigen += sigma[i][i] * sigma[i][i];
         printf("Sigma %d is %f\n", i, *(*SIGMA + i));
     }
+
+    V_T = &Vi;
 
     // Test U = M * V * Sigma-1
     matrix_multiply(temp, U_temp, sigma, N, N, M);
