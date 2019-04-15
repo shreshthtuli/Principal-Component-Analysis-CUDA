@@ -256,10 +256,15 @@ void SVD_and_PCA (int M,
         double* D, 
         double** U, 
         double** SIGMA, 
+        int* SIGMAm,
+        int* SIGMAn, 
         double** V_T, 
         double** D_HAT, 
         int *K,
         int retention) {
+
+    *SIGMAm = M;
+    *SIGMAm = N;
 
     printf("Starting SVD\n");
     // Dt is D transpose = NxM

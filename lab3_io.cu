@@ -21,6 +21,8 @@ void write_result (int M,
 		double* U, 
 		double* SIGMA, 
 		double* V_T,
+		int SIGMAm, 
+		int SIGMAn, 
 		int K, 
 		double* D_HAT,
 		double computation_time){

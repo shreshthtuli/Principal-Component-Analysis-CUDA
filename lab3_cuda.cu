@@ -32,7 +32,9 @@ void reverse_array(double* a, int N){
 }
 
 void copy_matrix(double** to, double** from, int n, int m){
+    #pragma omp parallel for
     for(int i = 0; i < m; i++){
+        #pragma omp parallel for
         for(int j = 0; j < n; j++)  
             to[i][j] = from[i][j];
     }
@@ -88,160 +90,216 @@ void print_matrix(double** A, int M, int N, char* name){
 /////////////////////////////////////////Jacobi////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-class SymmetricMatrix
-{
-    private:
-        size_t m_size;
-        double* m_mat;
-        double precision;
-    
-    public:
-        double* eigenvalues;
-        double** eVects;
-        SymmetricMatrix(size_t mat_size, double prec);
+#define TOLERANCE 0.001
+#define JACOBI_UPDATE_TOLERANCE 0.001
 
-        class Row
-        {
-            friend class SymmetricMatrix;
-            private:
-                SymmetricMatrix& m_mat;
-                size_t m_row;
-                Row(SymmetricMatrix& mat, size_t row) : m_mat(mat), m_row(row) {}
-            public:
-                double& operator[](size_t index);
-        };
+double **S; //Symmetric matrix (input)
+double  *e; //eigenvalues
+double **E; //eigenvectors
+int  *ind;
+bool *changed;
+int  state;
+int  N;
 
-        Row operator[](size_t index);
-        void calculateEigens();
-};
+double** mat_transpose(double** A, int Am, int An) {
+    double **B;
+    B = (double**)malloc(__SIZEOF_POINTER__*An);
+    for (int i=0; i<An; i++)
+        B[i] = (double*)malloc(__SIZEOF_DOUBLE__*Am);
 
-void maxInd(size_t *p, size_t *q, double *Apq, size_t size, SymmetricMatrix& matA)
-{
-    double Aij;
-    *p = 0, *q = 1;
-    *Apq = abs(matA[0][1]);
-    for (size_t i = 0; i < size; i++)
-    {
-        for (size_t j = 0; j < i; j++)
-        {
-            Aij = abs(matA[i][j]);
-            if (Aij > *Apq)
-            {
-                *Apq = Aij;
-                *p = i;
-                *q = j;
+    for (int i=0; i<Am; i++){
+        for (int j=0; j<An; j++){
+            B[j][i] = A[i][j];
+        }
+    }
+
+    return B;
+}
+
+double** mat_mul(double** A, int Am, int An, 
+                 double** B, int Bm, int Bn){
+    double **C;
+    C = (double**)malloc(__SIZEOF_POINTER__*Am);
+    for (int i=0; i<Am; i++)
+        C[i] = (double*)malloc(__SIZEOF_DOUBLE__*Bn);
+
+    for (int i=0; i<Am; i++){
+        for (int j=0; j<Bn; j++){
+            C[i][j] = 0;
+            for (int k=0; k<An; k++){
+                C[i][j] += A[i][k] * B[k][j];
             }
         }
     }
+
+    return C;
 }
 
-void calcPhiTCS(double *phi, size_t p, size_t q, double *t, double *c, double *s, SymmetricMatrix& matA)
-{
-    *phi = (matA[q][q] - matA[p][p]) / (2 * matA[p][q]);
-    *t = *phi == 0 ? 1 : (1 / (*phi + (*phi > 0 ? 1 : -1) * sqrt(*phi * *phi + 1)));
-    *c = 1 / sqrt(1 + *t * *t);
-    *s = *t / sqrt(1 + *t * *t);
-}
+int maxind(int k) {
+    int m = k+1;
 
-void populateA(double **A, size_t p, size_t q, double c, double s, SymmetricMatrix& matA, size_t size)
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        for (size_t j = 0; j < size; j++)
-        {
-            if (i == p)
-                A[i][j] = matA[p][j] * c - matA[q][j] * s;
-            else if (i == q)
-                A[i][j] = matA[p][j] * s + matA[q][j] * c;
-            else
-                A[i][j] = matA[i][j];
+    for (int i = k+2; i < N; i++){
+        if (fabs(S[k][i]) > fabs(S[k][m])){
+            m = i;
         }
     }
+
+    return m;
 }
 
-void populateMatA(double **A, size_t p, size_t q, double c, double s, SymmetricMatrix& matA, size_t size)
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        for (size_t j = 0; j <= i; j++)
-        {
-            if (j == p)
-                matA[i][p] = A[i][p] * c - A[i][q] * s;
-            else if (j == q)
-                matA[i][q] = A[i][p] * s + A[i][q] * c;
-            else
-                matA[i][j] = A[i][j];
+void update(int k, double t) {
+    double ek_prev = e[k];
+    e[k] = ek_prev + t;
+
+    if (e[k] < 0) e[k] = 0;
+
+    if (changed[k] && fabs(ek_prev - e[k]) < JACOBI_UPDATE_TOLERANCE) {
+        changed[k] = false;
+        state = state - 1;
+    }
+    else if ((! changed[k]) && fabs(ek_prev - e[k]) > JACOBI_UPDATE_TOLERANCE) {
+        changed[k] = true;
+        state = state + 1;
+    }
+}
+
+void rotate(int k, int l, int i, int j, double c, double s,
+            bool eigenvectors){
+    double** mat1;
+    double** mat2;
+    double** mat3;
+
+    mat1 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat1[0] = (double*)malloc(__SIZEOF_DOUBLE__*2);
+    mat1[1] = (double*)malloc(__SIZEOF_DOUBLE__*2);
+    mat1[0][0] = c; mat1[0][1] = -s;
+    mat1[1][0] = s; mat1[1][1] = c;
+
+    mat2 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat2[0] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    mat2[1] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    if (eigenvectors){
+        mat2[0][0] = E[i][k];
+        mat2[1][0] = E[i][l];
+    }
+    else {
+        mat2[0][0] = S[k][l];
+        mat2[1][0] = S[i][j];
+    }
+
+    mat3 = mat_mul(mat1, 2, 2, mat2, 2, 1);
+
+    if (eigenvectors){
+        E[i][k] = mat3[0][0];
+        E[i][l] = mat3[1][0];
+    }
+    else{
+        S[k][l] = mat3[0][0];
+        S[i][j] = mat3[1][0];
+    }
+
+    free(mat1[0]);
+    free(mat1[1]);
+    free(mat1);
+    free(mat2[0]);
+    free(mat2[1]);
+    free(mat2);
+    free(mat3[0]);
+    free(mat3[1]);
+    free(mat3);
+}
+
+// void print_matrix(double** A, int Am, int An) {
+//     cout << "[";
+//     for (int i=0; i<Am; i++){
+//         if (i>0)
+//             cout<<" ";
+//         cout<<"[";
+//         for (int j=0; j<An-1; j++){
+//             cout << A[i][j] << ", ";
+//         }
+//         if (i < Am-1)
+//             cout << A[i][An-1] << "]" << endl;
+//     }
+//     cout << A[Am-1][An-1] << "]]" << endl;
+// }
+
+// void print_vector(double* A, int An) {
+//     cout << "[";
+//     for(int i=0; i<An-1; i++)
+//         cout << A[i] << ",";
+//     cout << A[An-1] << "]" << endl;
+// }
+
+void init_jacobi() {
+    E = (double**)malloc(__SIZEOF_POINTER__*N);
+    for (int i=0; i<N; i++){
+        E[i] = (double*)malloc(__SIZEOF_DOUBLE__*N);
+        for (int j=0; j<N; j++){
+            E[i][j] = 0;
         }
+        E[i][i] = 1;
+    }
+
+    state = N;
+
+    e = (double*)malloc(__SIZEOF_DOUBLE__*N);
+    ind = (int*)malloc(__SIZEOF_INT__*N);
+    changed = (bool*)malloc(sizeof(bool)*N);
+
+    for (int k=0; k<N; k++){
+        ind[k]     = maxind(k);
+        e[k]       = S[k][k];
+        changed[k] = true;
     }
 }
 
-void computeNext(double **now, double **next, size_t p, size_t q, double c, double s, size_t size)
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        for (size_t j = 0; j < size; j++)
-        {
-            if (j == p)
-                next[i][j] = now[i][p] * c - now[i][q] * s;
-            else if (j == q)
-                next[i][j] = now[i][p] * s + now[i][q] * c;
-            else
-                next[i][j] = now[i][j];
+void Jacobi(double **input_matrix, int n, 
+            double **eigenvalues, double ***eigenvectors) {
+    N = n;
+    S = input_matrix;
+
+    init_jacobi();
+
+    while(state != 0){
+        int m = 0;
+
+        for (int k=1; k<N-1; k++){
+            if (fabs(S[k][ind[k]]) > fabs(S[m][ind[m]])){
+                m = k;
+            }
         }
-    }
-}
 
-SymmetricMatrix::SymmetricMatrix(size_t mat_size, double prec) 
-{
-    m_size = mat_size;
-    m_mat = new double[(mat_size - 1) * mat_size / 2 + mat_size];
-    precision = abs(prec);
-    eigenvalues = new double[mat_size];
-    eVects = diagonal_matrix(mat_size);
-}
+        int k = m;
+        int l = ind[m];
+        double p = S[k][l];
+        double y = (e[l] - e[k]) / 2.0;
+        double d = fabs(y) + sqrt(p*p + y*y);
+        double r = sqrt(p*p + d*d);
+        double c = d / r;
+        double s = p / r;
+        double t = (p*p) / d;
 
-SymmetricMatrix::Row SymmetricMatrix::operator[](size_t row)
-{
-    return Row(*this, row);
-}
+        if (y < 0.0) { s = -s; t = -t; }
 
-double& SymmetricMatrix::Row::operator[](size_t col)
-{
-    size_t r = max(m_row, col);
-    size_t c = min(m_row, col);
-    return m_mat.m_mat[(r + 1) * r / 2 + c];
-}
+        S[k][l] = 0.0;
+        update(k, -t);
+        update(l, t);
 
-void SymmetricMatrix::calculateEigens()
-{
-    size_t size = m_size;
+        for (int i=0; i<k; i++)  { rotate(i, k, i, l, c, s, false); }
+        for (int i=k+1; i<l; i++){ rotate(k, i, i, l, c, s, false); }
+        for (int i=l+1; i<N; i++)  { rotate(k, i, l, i, c, s, false); }
 
-    SymmetricMatrix* matAp = this;
-    SymmetricMatrix& matA = *matAp;
-    double Aij, Apq = 100, phi, t, c, s;
-    double** A = empty_matrix(size, size);
-    double** nextEVects = empty_matrix(size, size);
-    size_t p, q;
+        for (int i=0; i<N; i++){
+            rotate(k, l, i, i, c, s, true);
+        }
 
-    while(Apq > precision)
-    {
-        maxInd(&p, &q, &Apq, size, matA);
-
-        calcPhiTCS(&phi, p, q, &t, &c, &s, matA);
-
-        populateA(A, p, q, c, s, matA, size);
-    
-        populateMatA(A, p, q, c, s, matA, size);
-
-        populateMatA(A, p, q, c, s, matA, size);
-
-        computeNext(eVects, nextEVects, p, q, c, s ,size);        
-
-        copy_matrix(eVects, nextEVects, size, size);
+        ind[k] = maxind(k);
+        ind[l] = maxind(l);
     }
 
-    for (size_t i = 0; i < size; i++)
-        eigenvalues[i] = matA[i][i];
+    *eigenvalues = e;
+    *eigenvectors = E;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -254,10 +312,15 @@ void SVD_and_PCA (int M,
         double* D, 
         double** U, 
         double** SIGMA, 
+        int* SIGMAm,
+        int* SIGMAn, 
         double** V_T, 
         double** D_HAT, 
         int *K,
         int retention) {
+
+    *SIGMAm = M;
+    *SIGMAm = N;
 
     printf("Starting SVD\n");
     // Dt is D transpose = NxM
@@ -288,23 +351,20 @@ void SVD_and_PCA (int M,
     printf("Starting jacobi\n");
 
     // Jacobi
-    SymmetricMatrix mat(N, 1e-10);
+    double **prod, *eigenvalues, **eigenvectors;
 
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j <= i; j++)
-            mat[i][j] = DtD[i][j];
+    Jacobi(DtD, M, &eigenvalues, &eigenvectors);
 
-    mat.calculateEigens();
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
-            Ei[j][i] = mat.eVects[j][i];
+            Ei[j][i] = eigenvectors[i][j];
 
     // Extract eigenvalues into an array
-    double* eigenvalues = new double[N];
+    // double* eigenvalues = new double[N];
     double* eigenvalues1 = new double[N];
     for(int i = 0; i < N; i++){
-        eigenvalues[i] = mat.eigenvalues[i];
-        eigenvalues1[i] = mat.eigenvalues[i];
+        eigenvalues[i] = eigenvalues[i];
+        eigenvalues1[i] = eigenvalues[i];
     }
     
     std::sort(eigenvalues, eigenvalues + N);
