@@ -32,9 +32,7 @@ void reverse_array(double* a, int N){
 }
 
 void copy_matrix(double** to, double** from, int n, int m){
-    #pragma omp parallel for
     for(int i = 0; i < m; i++){
-        #pragma omp parallel for
         for(int j = 0; j < n; j++)  
             to[i][j] = from[i][j];
     }
