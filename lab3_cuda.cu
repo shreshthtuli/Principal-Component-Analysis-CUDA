@@ -4,19 +4,18 @@
 #include <math.h>
 #include <algorithm>
 
-
 using namespace std;
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////Helper Functions///////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-double compare_matrices(double** A, double** B, int M, int N){
+double compare_matrices(double* A, double* B, int M, int N){
     double diff = 0; int p, q;
     for(int i = 0; i < M; i++)
         for(int j = 0; j < N; j++){
-            if(fabs(fabs(A[i][j]) - fabs(B[i][j])) > diff){
-                diff = fabs(fabs(A[i][j]) - fabs(B[i][j]));
+            if(fabs(fabs(A[i*N+j]) - fabs(B[i*N+j])) > diff){
+                diff = fabs(fabs(A[i*N+j]) - fabs(B[i*N+j]));
                 p = i; q = j; 
             }
         }
@@ -31,16 +30,30 @@ void reverse_array(double* a, int N){
         a[i] = temp[N-i-1];
 }
 
-void copy_matrix(double** to, double** from, int n, int m){
-    #pragma omp parallel for
+void copy_matrix(double* to, double* from, int n, int m){
     for(int i = 0; i < m; i++){
-        #pragma omp parallel for
         for(int j = 0; j < n; j++)  
-            to[i][j] = from[i][j];
+            to[i*n+j] = from[i*n+j];
     }
 }
 
-double** empty_matrix(int m, int n){
+double* null_matrix(int m, int n){
+    double* A;
+    cudaMallocManaged((void**)&A, sizeof(double)*m*n);
+    return A;
+}
+
+double* empty_matrix(int m, int n){
+    double* A;
+    cudaMallocManaged((void**)&A, sizeof(double)*m*n);
+    for(int i = 0; i < m; i++){
+        for(int j = 0; j < n; j++)  
+            A[i*n+j] = 0;
+    }
+    return A;
+}
+
+double** empty_matrix_2d(int m, int n){
     double** A = new double*[m];
     for(int i = 0; i < m; i++){
         A[i] = new double[n];
@@ -50,32 +63,60 @@ double** empty_matrix(int m, int n){
     return A;
 }
 
-double** diagonal_matrix(int n){
-    double** A = new double*[n];
-    for(int i = 0; i < n; i++){
+double** null_matrix_2d(int m, int n){
+    double** A = new double*[m];
+    for(int i = 0; i < m; i++){
         A[i] = new double[n];
-        for(int j = 0; j < n; j++)  
-            A[i][j] = (i == j) ? 1 : 0;
     }
     return A;
 }
 
-float matrix_multiply(double** res, double** A, double** B, int N, int M, int N1){
-    // Matrices shapes: A = NxM, B = MxN1, res = NxN1
-    double diff = 0; double old;
-    for(int i = 0; i < N; i++){
-        for(int j = 0; j < N1; j++){
-            old = res[i][j];
-            res[i][j] = 0;
-            for(int k = 0; k < M; k++)
-                res[i][j] += A[i][k] * B[k][j];
-            diff = max(diff, fabs(fabs(res[i][j]) - fabs(old)));
-        }
+void copy_matrix_to2d(double** to, double* from, int m, int n){
+    for(int i = 0; i < m; i++){
+        for(int j = 0; j < n; j++)  
+            to[i][j] = from[i*n+j];
     }
-    return (float)diff;
 }
 
-void print_matrix(double** A, int M, int N, char* name){
+void copy_matrix_from2d(double* to, double** from, int m, int n){
+    for(int i = 0; i < m; i++){
+        for(int j = 0; j < n; j++)  
+            to[i*n+j] = from[i][j];
+    }
+}
+
+double* diagonal_matrix(int n){
+    double* A;
+    cudaMallocManaged((void**)&A, sizeof(double)*n*n);
+    for(int i = 0; i < n; i++){
+        for(int j = 0; j < n; j++)  
+            A[i*n+j] = (i == j) ? 1 : 0;
+    }
+    return A;
+}
+
+void matrix_multiply(double* res, double* A, double* B, int N, int M, int N1){
+    // Matrices shapes: A = NxM, B = MxN1, res = NxN1
+    for(int i = 0; i < N; i++){
+        for(int j = 0; j < N1; j++){
+            res[i*N1+j] = 0;
+            for(int k = 0; k < M; k++)
+                res[i*N1+j] += A[i*M+k] * B[k*N1+j];
+        }
+    }
+}
+
+void print_matrix(double* A, int M, int N, char* name){
+    printf("\nMatrix %s\n", name);
+    for(int i = 0; i < M; i++){
+        for(int j = 0; j < N; j++){
+            printf("%f ", A[i*N+j]);
+        }
+        printf("\n");
+    }
+}
+
+void print_matrix_2d(double** A, int M, int N, char* name){
     printf("\nMatrix %s\n", name);
     for(int i = 0; i < M; i++){
         for(int j = 0; j < N; j++){
@@ -101,28 +142,14 @@ bool *changed;
 int  state;
 int  N;
 
-double** mat_transpose(double** A, int Am, int An) {
-    double **B;
-    B = (double**)malloc(sizeof(float)*An);
-    for (int i=0; i<An; i++)
-        B[i] = (double*)malloc(sizeof(double)*Am);
+double** mat1;
+double** mat2;
+double** mat3;
+double ek_prev;
+int m;
 
-    for (int i=0; i<Am; i++){
-        for (int j=0; j<An; j++){
-            B[j][i] = A[i][j];
-        }
-    }
-
-    return B;
-}
-
-double** mat_mul(double** A, int Am, int An, 
+void mat_mul(double** C, double** A, int Am, int An, 
                  double** B, int Bm, int Bn){
-    double **C;
-    C = (double**)malloc(sizeof(float)*Am);
-    for (int i=0; i<Am; i++)
-        C[i] = (double*)malloc(sizeof(double)*Bn);
-
     for (int i=0; i<Am; i++){
         for (int j=0; j<Bn; j++){
             C[i][j] = 0;
@@ -131,12 +158,10 @@ double** mat_mul(double** A, int Am, int An,
             }
         }
     }
-
-    return C;
 }
 
 int maxind(int k) {
-    int m = k+1;
+    m = k+1;
 
     for (int i = k+2; i < N; i++){
         if (fabs(S[k][i]) > fabs(S[k][m])){
@@ -148,7 +173,7 @@ int maxind(int k) {
 }
 
 void update(int k, double t) {
-    double ek_prev = e[k];
+    ek_prev = e[k];
     e[k] = ek_prev + t;
 
     if (e[k] < 0) e[k] = 0;
@@ -165,19 +190,10 @@ void update(int k, double t) {
 
 void rotate(int k, int l, int i, int j, double c, double s,
             bool eigenvectors){
-    double** mat1;
-    double** mat2;
-    double** mat3;
 
-    mat1 = (double**)malloc(sizeof(float)*2);
-    mat1[0] = (double*)malloc(sizeof(double)*2);
-    mat1[1] = (double*)malloc(sizeof(double)*2);
     mat1[0][0] = c; mat1[0][1] = -s;
     mat1[1][0] = s; mat1[1][1] = c;
 
-    mat2 = (double**)malloc(sizeof(float)*2);
-    mat2[0] = (double*)malloc(sizeof(double)*1);
-    mat2[1] = (double*)malloc(sizeof(double)*1);
     if (eigenvectors){
         mat2[0][0] = E[i][k];
         mat2[1][0] = E[i][l];
@@ -187,7 +203,7 @@ void rotate(int k, int l, int i, int j, double c, double s,
         mat2[1][0] = S[i][j];
     }
 
-    mat3 = mat_mul(mat1, 2, 2, mat2, 2, 1);
+    mat_mul(mat3, mat1, 2, 2, mat2, 2, 1);
 
     if (eigenvectors){
         E[i][k] = mat3[0][0];
@@ -197,22 +213,12 @@ void rotate(int k, int l, int i, int j, double c, double s,
         S[k][l] = mat3[0][0];
         S[i][j] = mat3[1][0];
     }
-
-    free(mat1[0]);
-    free(mat1[1]);
-    free(mat1);
-    free(mat2[0]);
-    free(mat2[1]);
-    free(mat2);
-    free(mat3[0]);
-    free(mat3[1]);
-    free(mat3);
 }
 
 void init_jacobi() {
-    E = (double**)malloc(sizeof(float)*N);
+    E = (double**)malloc(__SIZEOF_POINTER__*N);
     for (int i=0; i<N; i++){
-        E[i] = (double*)malloc(sizeof(double)*N);
+        E[i] = (double*)malloc(__SIZEOF_DOUBLE__*N);
         for (int j=0; j<N; j++){
             E[i][j] = 0;
         }
@@ -221,8 +227,18 @@ void init_jacobi() {
 
     state = N;
 
-    e = (double*)malloc(sizeof(double)*N);
-    ind = (int*)malloc(sizeof(int)*N);
+    mat1 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat1[0] = (double*)malloc(__SIZEOF_DOUBLE__*2);
+    mat1[1] = (double*)malloc(__SIZEOF_DOUBLE__*2);
+    mat2 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat2[0] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    mat2[1] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    mat3 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat3[0] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    mat3[1] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+
+    e = (double*)malloc(__SIZEOF_DOUBLE__*N);
+    ind = (int*)malloc(__SIZEOF_INT__*N);
     changed = (bool*)malloc(sizeof(bool)*N);
 
     for (int k=0; k<N; k++){
@@ -239,24 +255,27 @@ void Jacobi(double **input_matrix, int n,
 
     init_jacobi();
 
-    while(state != 0){
-        int m = 0;
+    int k, l, i, m;
+    double p, y, d, r, c, s, t;
 
-        for (int k=1; k<N-1; k++){
+    while(state != 0){
+        m = 0;
+
+        for (k=1; k<N-1; k++){
             if (fabs(S[k][ind[k]]) > fabs(S[m][ind[m]])){
                 m = k;
             }
         }
 
-        int k = m;
-        int l = ind[m];
-        double p = S[k][l];
-        double y = (e[l] - e[k]) / 2.0;
-        double d = fabs(y) + sqrt(p*p + y*y);
-        double r = sqrt(p*p + d*d);
-        double c = d / r;
-        double s = p / r;
-        double t = (p*p) / d;
+        k = m;
+        l = ind[m];
+        p = S[k][l];
+        y = (e[l] - e[k]) / 2.0;
+        d = fabs(y) + sqrt(p*p + y*y);
+        r = sqrt(p*p + d*d);
+        c = d / r;
+        s = p / r;
+        t = (p*p) / d;
 
         if (y < 0.0) { s = -s; t = -t; }
 
@@ -264,11 +283,11 @@ void Jacobi(double **input_matrix, int n,
         update(k, -t);
         update(l, t);
 
-        for (int i=0; i<k; i++)  { rotate(i, k, i, l, c, s, false); }
-        for (int i=k+1; i<l; i++){ rotate(k, i, i, l, c, s, false); }
-        for (int i=l+1; i<N; i++)  { rotate(k, i, l, i, c, s, false); }
+        for (i=0; i<k; i++)  { rotate(i, k, i, l, c, s, false); }
+        for (i=k+1; i<l; i++){ rotate(k, i, i, l, c, s, false); }
+        for (i=l+1; i<N; i++)  { rotate(k, i, l, i, c, s, false); }
 
-        for (int i=0; i<N; i++){
+        for (i=0; i<N; i++){
             rotate(k, l, i, i, c, s, true);
         }
 
@@ -284,16 +303,20 @@ void Jacobi(double **input_matrix, int n,
 //////////////////////////////////////////CUDA/////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-__global__ void DHat(double* Dhat, double* D, double* W, int N, int k)
+__global__ void mult_cuda(double* res, double* a, double* b, int N, int M, int N1)
 {
     int i = blockIdx.x;
-    int j = threadIdx.y;
+    int j = threadIdx.x;
 
-    Dhat[i*(k+1) + j] = 0;
-    for(int p = 0; p < N; p++){
-        Dhat[i*(k+1) + j] += D[i*N + p] * W[p*(k+1)+j];
-    }
-    printf("(%d,%d) : N=%d, k=%d\n", i, j, N, k);
+    res[i*N1+j] = 0;
+    for(int k = 0; k < M; k++)
+        res[i*N1+j] += a[i*M+k] * b[k*N1+j];
+}
+
+void matrix_multiply_cuda(double* res, double* a, double* b, int N, int M, int N1){
+    // Matrices shapes: A = NxM, B = MxN1, res = NxN1
+    mult_cuda<<<N, N1>>>(res, a, b, N, M, N1);
+    cudaDeviceSynchronize();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -318,38 +341,45 @@ void SVD_and_PCA (
 
     printf("Starting SVD\n");
     // Dt is D transpose = NxM
-    double** Dt = empty_matrix(N, M);
+    double* Dt = empty_matrix(N, M);
     // Dc is copy of D = MxN
-    double** Dc = empty_matrix(M, N);
+    double* Dc = empty_matrix(M, N);
 
     // DtD is Dt.D = NxN, so are Q and R
-    double** DtD = empty_matrix(N, N);
+    double* DtD = empty_matrix(N, N);
     
     // Compute Dt and Dc
     for(int i = 0; i < M; i++){
         for(int j = 0; j < N; j++){
-            Dt[j][i] = D[i*N + j];
-            Dc[i][j] = D[i*N + j];
+            Dt[j*M+i] = D[i*N + j];
+            Dc[i*N+j] = D[i*N + j];
         }
     }
 
     // Multiply Dt.D = NxM . MxN = NxN
-    matrix_multiply(DtD, Dt, Dc, N, M, N);
+    matrix_multiply_cuda(DtD, Dt, Dc, N, M, N);
 
-    print_matrix(DtD, N, N, "DtD\0");
+    // print_matrix(DtD, N, N, "DtD\0");
 
     // Get Eigenvalues of DtD i.e. Q and R
-    double** Ei = empty_matrix(N, N);
-    double** Ei_temp = empty_matrix(N, N);
-    double *eigenvalues = new double[N];;
+    double* Ei = null_matrix(N, N);
+    double* Ei_temp = null_matrix(N, N);
+    double* eigenvalues;
+    double** eigenvectors;
+
+    // Convert DtD to 2d matrix for Jacobi
+    double** DtDJ = null_matrix_2d(N, N);
+    copy_matrix_to2d(DtDJ, DtD, N, N);
+    print_matrix_2d(DtDJ, N, N, "DtDJ\0");
 
     printf("Starting jacobi\n");
-
-    // Jacobi
-    Jacobi(DtD, N, &eigenvalues, &Ei);
-
+    Jacobi(DtDJ, N, &eigenvalues, &eigenvectors);
     printf("End jacobi\n");
 
+    // Convert Eigenvectors from 2d to 1d
+    copy_matrix_from2d(Ei, eigenvectors, N, N);
+
+    // Sorting and reordering eigenvectors
     double* eigenvalues1 = new double[N];
     for(int i = 0; i < N; i++){
         eigenvalues1[i] = eigenvalues[i];
@@ -362,7 +392,6 @@ void SVD_and_PCA (
     }
 
     // Update Ei
-    Ei_temp = empty_matrix(N, N);
     for(int j = 0; j < N; j++){
         int p = 0;
         // Find p i.e. index of jth max eigenvalue
@@ -372,7 +401,7 @@ void SVD_and_PCA (
         }
         printf("p=%d, j=%d\n",p,j);
         for(int i = 0; i < N; i++){
-            Ei_temp[i][j] = Ei[i][p];
+            Ei_temp[i*N+j] = Ei[i*N+p];
         }
     }
     print_matrix(Ei, N, N, "Ei\0");
@@ -380,54 +409,46 @@ void SVD_and_PCA (
 
     copy_matrix(Ei, Ei_temp, N, N);
 
-    double** sigma = empty_matrix(M, N);
-    double** sigma_inv = empty_matrix(N, M);
+    // Compute Sigma
+    double* sigma = empty_matrix(M, N);
+    double* sigma_inv = empty_matrix(N, M);
     double* sigma_vals = new double[N];
     for(int i = 0; i < N; i++){
         sigma_vals[i] = sqrt(eigenvalues[i]);
-        sigma[i][i] = sqrt(eigenvalues[i]);
-        sigma_inv[i][i] = (1.0 / sqrt(eigenvalues[i]));
+        sigma[i*N+i] = sqrt(eigenvalues[i]);
+        sigma_inv[i*M+i] = (1.0 / sqrt(eigenvalues[i]));
     }
 
     SIGMA = &sigma_vals;
 
-    double** Vt = empty_matrix(M, M);
-    double** U_temp = empty_matrix(N, N);
-    double* Ui = new double[N*N];
+    double* V_temp = null_matrix(M, M);
+    double* U_temp = null_matrix(N, N);
+
     // Compute U
     for(int i = 0; i < N; i++){
         for(int j = 0; j < N; j++){
-            Ui[N*i + j] = Ei[i][j];
-            U_temp[i][j] = Ei[i][j];
+            U_temp[i*N+j] = Ei[i*N+j];
         }
     }
     
-    U = &Ui;
-    double** temp = empty_matrix(M, N);
-    double** temp2 = empty_matrix(M, M);
-    matrix_multiply(temp, Dc, Ei, M, N, N);
-    matrix_multiply(temp2, temp, sigma_inv, M, N, M);
+    U = &U_temp;
 
-    // V_T
-    double* Vi = new double[M*M];
+    double* temp = null_matrix(M, N);
+    double* temp2 = null_matrix(M, M);
+    matrix_multiply_cuda(temp, Dc, Ei, M, N, N);
+    matrix_multiply_cuda(temp2, temp, sigma_inv, M, N, M);
+
+    // Compute V_T
     for(int i = 0; i < M; i++)
         for(int j = 0; j < M; j++){
-            Vi[M*j+i] = temp2[i][j];
-            Vt[j][i] = temp2[i][j];
+            V_temp[j*M+i] = temp2[i*M+j];
         }
 
-    double ret = double(retention)/100;
-    double sumeigen = 0;
-    for(int i = 0; i < N; i++){
-        sumeigen += sigma[i][i] * sigma[i][i];
-        printf("Sigma %d is %f\n", i, *(*SIGMA + i));
-    }
-
-    V_T = &Vi;
+    V_T = &V_temp;
 
     // Test U = M * V * Sigma-1
-    matrix_multiply(temp, U_temp, sigma, N, N, M);
-    matrix_multiply(temp2, temp, Vt, N, M, M);
+    matrix_multiply_cuda(temp, U_temp, sigma, N, N, M);
+    matrix_multiply_cuda(temp2, temp, V_temp, N, M, M);
 
     printf("Comparison result diff = %f\n", compare_matrices(temp2, Dt, N, M));
 
@@ -436,47 +457,34 @@ void SVD_and_PCA (
 //////////////////////////////////////////PCA//////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-
+    double ret = double(retention)/100;
+    double sumeigen = 0;
+    for(int i = 0; i < N; i++){
+        sumeigen += sigma[i*N+i] * sigma[i*N+i];
+        printf("Sigma %d is %f\n", i, *(*SIGMA + i));
+    }
     double sumret = 0; int k = 0;
     for(k = 0; k < N; k++){
-        sumret += (sigma[k][k] * sigma[k][k]/ sumeigen);
+        sumret += (sigma[k*N+k] * sigma[k*N+k]/ sumeigen);
         if(sumret >= ret)
             break;
     }
 
     *K = k+1;
     printf("K = %d\n", *K);
-    double* Wi = new double[N*(k+1)];
-    double** W = empty_matrix(N, k+1);
+    double* W = empty_matrix(N, k+1);
     for(int i = 0; i < N; i++){
-        for(int j = 0; j <= k; j++){
-            Wi[i*(k+1) + j] = U_temp[i][j];
-            W[i][j] = U_temp[i][j];
-        }
+        for(int j = 0; j <= k; j++)
+            W[i*(k+1)+j] = U_temp[i*N+j];
     }
 
     // Print W
     print_matrix(W, N, *K, "W\0");
 
     printf("D-Hat:\n");
-    double* DHatTemp = (double *)malloc(sizeof(double)*((k+1) * M));
+    double* DHatTemp = null_matrix(M, k+1);
 
-    // CUDA
-    double *DHatTemp_cuda, *D_cuda, *W_cuda;
-    int *N_cuda, *k_cuda;
-    cudaMalloc((void**)&DHatTemp_cuda, sizeof(double)*((k+1) * M));
-    cudaMalloc((void**)&D_cuda, sizeof(double)*M*N);
-    cudaMalloc((void**)&W_cuda, sizeof(double)*(k+1)*N);
-    cudaMalloc((void**)&N_cuda, sizeof(int));
-    cudaMalloc((void**)&k_cuda, sizeof(int));
-    cudaMemcpy(D_cuda, D, sizeof(double)*M*N, cudaMemcpyHostToDevice);
-    cudaMemcpy(W_cuda, Wi, sizeof(double)*(k+1)*N, cudaMemcpyHostToDevice);
-    cudaMemcpy(N_cuda, &N, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(k_cuda, &k, sizeof(int), cudaMemcpyHostToDevice);
-
-    DHat<<<N, k+1>>>(DHatTemp_cuda, D_cuda, W_cuda, N, k);
-    cudaDeviceSynchronize();
-    cudaMemcpy(DHatTemp, DHatTemp_cuda, sizeof(double)*((k+1) * M), cudaMemcpyDeviceToHost);
+    matrix_multiply_cuda(DHatTemp, Dc, W, M, N, (k+1));
 
     for(int i = 0; i < M; i++){
         for(int j = 0; j <= k; j++){
