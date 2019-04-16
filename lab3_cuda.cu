@@ -370,7 +370,7 @@ void SVD_and_PCA (
     // Convert DtD to 2d matrix for Jacobi
     double** DtDJ = null_matrix_2d(N, N);
     copy_matrix_to2d(DtDJ, DtD, N, N);
-    print_matrix_2d(DtDJ, N, N, "DtDJ\0");
+    // print_matrix_2d(DtDJ, N, N, "DtDJ\0");
 
     printf("Starting jacobi\n");
     Jacobi(DtDJ, N, &eigenvalues, &eigenvectors);
@@ -387,9 +387,9 @@ void SVD_and_PCA (
     
     std::sort(eigenvalues, eigenvalues + N);
     reverse_array(eigenvalues, N);
-    for(int i = 0; i < N; i++){
-        printf("Eigenvals = %f, \t\t %f\n", eigenvalues[i], eigenvalues1[i]);
-    }
+    // for(int i = 0; i < N; i++){
+    //     printf("Eigenvals = %f, \t\t %f\n", eigenvalues[i], eigenvalues1[i]);
+    // }
 
     // Update Ei
     for(int j = 0; j < N; j++){
@@ -399,13 +399,13 @@ void SVD_and_PCA (
             if(eigenvalues1[p] == eigenvalues[j])
                 break;
         }
-        printf("p=%d, j=%d\n",p,j);
+        // printf("p=%d, j=%d\n",p,j);
         for(int i = 0; i < N; i++){
             Ei_temp[i*N+j] = Ei[i*N+p];
         }
     }
-    print_matrix(Ei, N, N, "Ei\0");
-    print_matrix(Ei_temp, N, N, "Ei_temp\0");
+    // print_matrix(Ei, N, N, "Ei\0");
+    // print_matrix(Ei_temp, N, N, "Ei_temp\0");
 
     copy_matrix(Ei, Ei_temp, N, N);
 
@@ -419,7 +419,7 @@ void SVD_and_PCA (
         sigma_inv[i*M+i] = (1.0 / sqrt(eigenvalues[i]));
     }
 
-    SIGMA = &sigma_vals;
+    *SIGMA = sigma_vals;
 
     double* V_temp = null_matrix(M, M);
     double* U_temp = null_matrix(N, N);
@@ -431,7 +431,7 @@ void SVD_and_PCA (
         }
     }
     
-    U = &U_temp;
+    *U = U_temp;
 
     double* temp = null_matrix(M, N);
     double* temp2 = null_matrix(M, M);
@@ -444,13 +444,13 @@ void SVD_and_PCA (
             V_temp[j*M+i] = temp2[i*M+j];
         }
 
-    V_T = &V_temp;
+    *V_T = V_temp;
 
     // Test U = M * V * Sigma-1
-    matrix_multiply_cuda(temp, U_temp, sigma, N, N, M);
-    matrix_multiply_cuda(temp2, temp, V_temp, N, M, M);
+    // matrix_multiply_cuda(temp, U_temp, sigma, N, N, M);
+    // matrix_multiply_cuda(temp2, temp, V_temp, N, M, M);
 
-    printf("Comparison result diff = %f\n", compare_matrices(temp2, Dt, N, M));
+    // printf("Comparison result diff = %f\n", compare_matrices(temp2, Dt, N, M));
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////
@@ -461,7 +461,7 @@ void SVD_and_PCA (
     double sumeigen = 0;
     for(int i = 0; i < N; i++){
         sumeigen += sigma[i*N+i] * sigma[i*N+i];
-        printf("Sigma %d is %f\n", i, *(*SIGMA + i));
+        // printf("Sigma %d is %f\n", i, *(*SIGMA + i));
     }
     double sumret = 0; int k = 0;
     for(k = 0; k < N; k++){
@@ -479,7 +479,7 @@ void SVD_and_PCA (
     }
 
     // Print W
-    print_matrix(W, N, *K, "W\0");
+    // print_matrix(W, N, *K, "W\0");
 
     printf("D-Hat:\n");
     double* DHatTemp = null_matrix(M, k+1);
@@ -493,6 +493,6 @@ void SVD_and_PCA (
         printf("\n");
     }
 
-    D_HAT = &DHatTemp;
+    *D_HAT = DHatTemp;
 }
 
