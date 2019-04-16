@@ -1,8 +1,11 @@
 #include "lab3_io.h"
 #include "lab3_cuda.h"
-
+#include <iostream>
 #include <stdlib.h>
 #include <omp.h>
+#include <stdio.h>
+
+using namespace std;
 
 /*
 	Arguments:
@@ -67,7 +70,7 @@ int main(int argc, char const *argv[])
 	cudaEventRecord(stop);
 	cudaEventSynchronize(stop);
 	cudaEventElapsedTime(&computation_time, start, stop);
-	printf("Total time: %f\n", computation_time);
+	cout<< "Total time: " << computation_time << endl;
 	
 	/*
 		--Pre-defined functions --

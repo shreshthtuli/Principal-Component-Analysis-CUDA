@@ -103,9 +103,9 @@ int  N;
 
 double** mat_transpose(double** A, int Am, int An) {
     double **B;
-    B = (double**)malloc(sizeof(float)*An);
+    B = (double**)malloc(__SIZEOF_POINTER__*An);
     for (int i=0; i<An; i++)
-        B[i] = (double*)malloc(sizeof(double)*Am);
+        B[i] = (double*)malloc(__SIZEOF_DOUBLE__*Am);
 
     for (int i=0; i<Am; i++){
         for (int j=0; j<An; j++){
@@ -119,9 +119,9 @@ double** mat_transpose(double** A, int Am, int An) {
 double** mat_mul(double** A, int Am, int An, 
                  double** B, int Bm, int Bn){
     double **C;
-    C = (double**)malloc(sizeof(float)*Am);
+    C = (double**)malloc(__SIZEOF_POINTER__*Am);
     for (int i=0; i<Am; i++)
-        C[i] = (double*)malloc(sizeof(double)*Bn);
+        C[i] = (double*)malloc(__SIZEOF_DOUBLE__*Bn);
 
     for (int i=0; i<Am; i++){
         for (int j=0; j<Bn; j++){
@@ -169,15 +169,15 @@ void rotate(int k, int l, int i, int j, double c, double s,
     double** mat2;
     double** mat3;
 
-    mat1 = (double**)malloc(sizeof(float)*2);
-    mat1[0] = (double*)malloc(sizeof(double)*2);
-    mat1[1] = (double*)malloc(sizeof(double)*2);
+    mat1 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat1[0] = (double*)malloc(__SIZEOF_DOUBLE__*2);
+    mat1[1] = (double*)malloc(__SIZEOF_DOUBLE__*2);
     mat1[0][0] = c; mat1[0][1] = -s;
     mat1[1][0] = s; mat1[1][1] = c;
 
-    mat2 = (double**)malloc(sizeof(float)*2);
-    mat2[0] = (double*)malloc(sizeof(double)*1);
-    mat2[1] = (double*)malloc(sizeof(double)*1);
+    mat2 = (double**)malloc(__SIZEOF_POINTER__*2);
+    mat2[0] = (double*)malloc(__SIZEOF_DOUBLE__*1);
+    mat2[1] = (double*)malloc(__SIZEOF_DOUBLE__*1);
     if (eigenvectors){
         mat2[0][0] = E[i][k];
         mat2[1][0] = E[i][l];
@@ -210,9 +210,9 @@ void rotate(int k, int l, int i, int j, double c, double s,
 }
 
 void init_jacobi() {
-    E = (double**)malloc(sizeof(float)*N);
+    E = (double**)malloc(__SIZEOF_POINTER__*N);
     for (int i=0; i<N; i++){
-        E[i] = (double*)malloc(sizeof(double)*N);
+        E[i] = (double*)malloc(__SIZEOF_DOUBLE__*N);
         for (int j=0; j<N; j++){
             E[i][j] = 0;
         }
@@ -221,8 +221,8 @@ void init_jacobi() {
 
     state = N;
 
-    e = (double*)malloc(sizeof(double)*N);
-    ind = (int*)malloc(sizeof(int)*N);
+    e = (double*)malloc(__SIZEOF_DOUBLE__*N);
+    ind = (int*)malloc(__SIZEOF_INT__*N);
     changed = (bool*)malloc(sizeof(bool)*N);
 
     for (int k=0; k<N; k++){
@@ -281,24 +281,9 @@ void Jacobi(double **input_matrix, int n,
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////CUDA/////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////////////////
-
-__global__ void DHat(double* Dhat, double* D, double* W, int N, int k)
-{
-    int i = blockIdx.x;
-    int j = threadIdx.y;
-
-    Dhat[i*(k+1) + j] = 0;
-    for(int p = 0; p < N; p++){
-        Dhat[i*(k+1) + j] += D[i*N + p] * W[p*(k+1)+j];
-    }
-    printf("(%d,%d) : N=%d, k=%d\n", i, j, N, k);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////SVD//////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////
+
 
 void SVD_and_PCA (
     int M, 
@@ -347,8 +332,6 @@ void SVD_and_PCA (
 
     // Jacobi
     Jacobi(DtD, N, &eigenvalues, &Ei);
-
-    printf("End jacobi\n");
 
     double* eigenvalues1 = new double[N];
     for(int i = 0; i < N; i++){
@@ -446,11 +429,9 @@ void SVD_and_PCA (
 
     *K = k+1;
     printf("K = %d\n", *K);
-    double* Wi = new double[N*(k+1)];
     double** W = empty_matrix(N, k+1);
     for(int i = 0; i < N; i++){
         for(int j = 0; j <= k; j++){
-            Wi[i*(k+1) + j] = U_temp[i][j];
             W[i][j] = U_temp[i][j];
         }
     }
@@ -460,26 +441,12 @@ void SVD_and_PCA (
 
     printf("D-Hat:\n");
     double* DHatTemp = (double *)malloc(sizeof(double)*((k+1) * M));
-
-    // CUDA
-    double *DHatTemp_cuda, *D_cuda, *W_cuda;
-    int *N_cuda, *k_cuda;
-    cudaMalloc((void**)&DHatTemp_cuda, sizeof(double)*((k+1) * M));
-    cudaMalloc((void**)&D_cuda, sizeof(double)*M*N);
-    cudaMalloc((void**)&W_cuda, sizeof(double)*(k+1)*N);
-    cudaMalloc((void**)&N_cuda, sizeof(int));
-    cudaMalloc((void**)&k_cuda, sizeof(int));
-    cudaMemcpy(D_cuda, D, sizeof(double)*M*N, cudaMemcpyHostToDevice);
-    cudaMemcpy(W_cuda, Wi, sizeof(double)*(k+1)*N, cudaMemcpyHostToDevice);
-    cudaMemcpy(N_cuda, &N, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(k_cuda, &k, sizeof(int), cudaMemcpyHostToDevice);
-
-    DHat<<<N, k+1>>>(DHatTemp_cuda, D_cuda, W_cuda, N, k);
-    cudaDeviceSynchronize();
-    cudaMemcpy(DHatTemp, DHatTemp_cuda, sizeof(double)*((k+1) * M), cudaMemcpyDeviceToHost);
-
     for(int i = 0; i < M; i++){
         for(int j = 0; j <= k; j++){
+            DHatTemp[i*(k+1) + j] = 0;
+            for(int p = 0; p < N; p++){
+                *(DHatTemp + i*(k+1) + j) += *(D + i*N + p) * W[p][j];
+            }
             printf("%f ", DHatTemp[i*(k+1) + j]);
         }
         printf("\n");
