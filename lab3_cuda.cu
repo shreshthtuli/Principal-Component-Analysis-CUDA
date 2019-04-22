@@ -336,10 +336,10 @@ void SVD_and_PCA (
     int *K, 
     int retention) {
 
-    *SIGMAm = M;
     *SIGMAm = N;
+    *SIGMAn = M;
 
-    printf("Starting SVD\n");
+    // printf("Starting SVD\n");
     // Dt is D transpose = NxM
     double* Dt = empty_matrix(N, M);
     // Dc is copy of D = MxN
@@ -372,9 +372,9 @@ void SVD_and_PCA (
     copy_matrix_to2d(DtDJ, DtD, N, N);
     // print_matrix_2d(DtDJ, N, N, "DtDJ\0");
 
-    printf("Starting jacobi\n");
+    // printf("Starting jacobi\n");
     Jacobi(DtDJ, N, &eigenvalues, &eigenvectors);
-    printf("End jacobi\n");
+    // printf("End jacobi\n");
 
     // Convert Eigenvectors from 2d to 1d
     copy_matrix_from2d(Ei, eigenvectors, N, N);
@@ -471,7 +471,7 @@ void SVD_and_PCA (
     }
 
     *K = k+1;
-    printf("K = %d\n", *K);
+    // printf("K = %d\n", *K);
     double* W = empty_matrix(N, k+1);
     for(int i = 0; i < N; i++){
         for(int j = 0; j <= k; j++)
@@ -481,17 +481,17 @@ void SVD_and_PCA (
     // Print W
     // print_matrix(W, N, *K, "W\0");
 
-    printf("D-Hat:\n");
+    // printf("D-Hat:\n");
     double* DHatTemp = null_matrix(M, k+1);
 
     matrix_multiply_cuda(DHatTemp, Dc, W, M, N, (k+1));
 
-    for(int i = 0; i < M; i++){
-        for(int j = 0; j <= k; j++){
-            printf("%f ", DHatTemp[i*(k+1) + j]);
-        }
-        printf("\n");
-    }
+    // for(int i = 0; i < M; i++){
+    //     for(int j = 0; j <= k; j++){
+    //         printf("%f ", DHatTemp[i*(k+1) + j]);
+    //     }
+    //     printf("\n");
+    // }
 
     *D_HAT = DHatTemp;
 }
